@@ -47,6 +47,7 @@ private slots:
     void onGoTo();
     void onSelectAll();
     void onTimeDate();
+    void onToggleReadOnly(bool checked);
     void updateEditActions();
 
     // Format actions
@@ -85,6 +86,7 @@ private:
 
     // Status bar widgets
     QLabel* m_cursorPosLabel = nullptr;
+    QLabel* m_readOnlyLabel = nullptr;
     QLabel* m_encodingLabel = nullptr;
     QLabel* m_lineEndingLabel = nullptr;
 
@@ -92,7 +94,10 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_cutAction = nullptr;
     QAction* m_copyAction = nullptr;
+    QAction* m_pasteAction = nullptr;
     QAction* m_deleteAction = nullptr;
+    QAction* m_timeDateAction = nullptr;
+    QAction* m_readOnlyAction = nullptr;
     QAction* m_wordWrapAction = nullptr;
     QAction* m_statusBarAction = nullptr;
 

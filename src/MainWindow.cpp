@@ -110,8 +110,8 @@ void MainWindow::createMenus() {
     m_copyAction->setShortcut(QKeySequence::Copy);
     m_copyAction->setEnabled(false);
 
-    auto* pasteAction = editMenu->addAction(tr("&Paste"), this, &MainWindow::onPaste);
-    pasteAction->setShortcut(QKeySequence::Paste);
+    m_pasteAction = editMenu->addAction(tr("&Paste"), this, &MainWindow::onPaste);
+    m_pasteAction->setShortcut(QKeySequence::Paste);
 
     m_deleteAction = editMenu->addAction(tr("De&lete"), this, &MainWindow::onDelete);
     m_deleteAction->setShortcut(QKeySequence::Delete);
@@ -144,8 +144,13 @@ void MainWindow::createMenus() {
     auto* selectAllAction = editMenu->addAction(tr("Select &All"), this, &MainWindow::onSelectAll);
     selectAllAction->setShortcut(QKeySequence::SelectAll);
 
-    auto* timeDateAction = editMenu->addAction(tr("Time/&Date"), this, &MainWindow::onTimeDate);
-    timeDateAction->setShortcut(QKeySequence(Qt::Key_F5));
+    m_timeDateAction = editMenu->addAction(tr("Time/&Date"), this, &MainWindow::onTimeDate);
+    m_timeDateAction->setShortcut(QKeySequence(Qt::Key_F5));
+
+    editMenu->addSeparator();
+
+    m_readOnlyAction = editMenu->addAction(tr("&Read-Only"), this, &MainWindow::onToggleReadOnly);
+    m_readOnlyAction->setCheckable(true);
 
     // === FORMAT MENU ===
     QMenu* formatMenu = menuBar()->addMenu(tr("F&ormat"));
@@ -200,6 +205,10 @@ void MainWindow::createStatusBar() {
     m_cursorPosLabel = new QLabel(this);
     m_cursorPosLabel->setMinimumWidth(140);
     statusBar()->addWidget(m_cursorPosLabel);
+
+    m_readOnlyLabel = new QLabel(this);
+    m_readOnlyLabel->setMinimumWidth(90);
+    statusBar()->addPermanentWidget(m_readOnlyLabel);
 
     m_encodingLabel = new QLabel(this);
     m_encodingLabel->setMinimumWidth(100);
@@ -412,19 +421,33 @@ void MainWindow::onTimeDate() {
     m_editor->insertDateTime();
 }
 
+void MainWindow::onToggleReadOnly(bool checked) {
+    m_editor->setReadOnly(checked);
+    updateEditActions();
+    updateWindowTitle();
+    updateStatusBar();
+}
+
 void MainWindow::updateEditActions() {
+    bool readOnly = m_editor->isReadOnly();
     if (m_undoAction) {
-        m_undoAction->setEnabled(m_editor->document()->isUndoAvailable());
+        m_undoAction->setEnabled(!readOnly && m_editor->document()->isUndoAvailable());
     }
     bool hasSelection = m_editor->textCursor().hasSelection();
     if (m_cutAction) {
-        m_cutAction->setEnabled(hasSelection);
+        m_cutAction->setEnabled(!readOnly && hasSelection);
     }
     if (m_copyAction) {
         m_copyAction->setEnabled(hasSelection);
     }
+    if (m_pasteAction) {
+        m_pasteAction->setEnabled(!readOnly);
+    }
     if (m_deleteAction) {
-        m_deleteAction->setEnabled(hasSelection);
+        m_deleteAction->setEnabled(!readOnly && hasSelection);
+    }
+    if (m_timeDateAction) {
+        m_timeDateAction->setEnabled(!readOnly);
     }
 }
 
@@ -476,12 +499,19 @@ void MainWindow::onCursorCoordinatesChanged(int line, int column) {
 
 void MainWindow::updateStatusBar() {
     m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(m_editor->currentLine()).arg(m_editor->currentColumn()));
+    if (m_readOnlyLabel) {
+        m_readOnlyLabel->setText(m_editor->isReadOnly() ? tr("[Read-Only]") : QString());
+    }
     m_encodingLabel->setText(m_fileManager->encodingName());
     m_lineEndingLabel->setText(m_fileManager->lineEndingName());
 }
 
 void MainWindow::updateWindowTitle() {
-    setWindowTitle(m_fileManager->windowTitle());
+    QString title = m_fileManager->windowTitle();
+    if (m_editor->isReadOnly()) {
+        title += tr(" [Read-Only]");
+    }
+    setWindowTitle(title);
 }
 
 bool MainWindow::maybeSave() {
