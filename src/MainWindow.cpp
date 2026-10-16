@@ -12,6 +12,13 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QFontDatabase>
+#include <QDialog>
+#include <QGroupBox>
+#include <QFormLayout>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
 namespace YANP {
 
@@ -165,6 +172,9 @@ void MainWindow::createMenus() {
 
     QMenu* themeMenu = viewMenu->addMenu(tr("&Theme"));
     populateThemesMenu(themeMenu);
+
+    viewMenu->addSeparator();
+    viewMenu->addAction(tr("&Document Statistics"), this, &MainWindow::onDocumentStatistics);
 
     // === HELP MENU ===
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -453,6 +463,102 @@ void MainWindow::onThemeSelected(QAction* action) {
     if (m_themeManager->setTheme(themeId)) {
         m_themeManager->applyTheme(m_themeManager->currentTheme(), this, m_editor, statusBar());
     }
+}
+
+// === DOCUMENT STATISTICS DIALOG ===
+DocumentStatisticsDialog::DocumentStatisticsDialog(const EditorWidget* editor, QWidget* parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Document Statistics"));
+
+    int docLines = 0;
+    int docWords = 0;
+    int docCharsWithSpaces = 0;
+    int docCharsWithoutSpaces = 0;
+
+    int selLines = 0;
+    int selWords = 0;
+    int selCharsWithSpaces = 0;
+    int selCharsWithoutSpaces = 0;
+    bool hasSelection = false;
+
+    if (editor) {
+        const QString fullText = editor->toPlainText();
+        if (!fullText.isEmpty()) {
+            docLines = editor->document()->blockCount();
+            docCharsWithSpaces = fullText.length();
+            for (const QChar& ch : fullText) {
+                if (!ch.isSpace()) {
+                    ++docCharsWithoutSpaces;
+                }
+            }
+            const QStringList words = fullText.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+            docWords = words.size();
+        }
+
+        const QTextCursor cursor = editor->textCursor();
+        hasSelection = cursor.hasSelection();
+        if (hasSelection) {
+            const QString selText = cursor.selectedText();
+            if (!selText.isEmpty()) {
+                QTextCursor startCursor = cursor;
+                startCursor.setPosition(cursor.selectionStart());
+                QTextCursor endCursor = cursor;
+                endCursor.setPosition(cursor.selectionEnd());
+                selLines = endCursor.blockNumber() - startCursor.blockNumber() + 1;
+
+                selCharsWithSpaces = selText.length();
+                for (const QChar& ch : selText) {
+                    if (!ch.isSpace() && ch != QChar::ParagraphSeparator) {
+                        ++selCharsWithoutSpaces;
+                    }
+                }
+                QString normalizedText = selText;
+                normalizedText.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+                const QStringList words = normalizedText.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+                selWords = words.size();
+            }
+        }
+    }
+
+    auto* mainLayout = new QVBoxLayout(this);
+
+    auto* groupsLayout = new QHBoxLayout();
+
+    auto* docGroup = new QGroupBox(tr("Document"), this);
+    auto* docLayout = new QFormLayout(docGroup);
+    docLayout->addRow(tr("Lines:"), new QLabel(QString::number(docLines), this));
+    docLayout->addRow(tr("Words:"), new QLabel(QString::number(docWords), this));
+    docLayout->addRow(tr("Characters (with spaces):"), new QLabel(QString::number(docCharsWithSpaces), this));
+    docLayout->addRow(tr("Characters (without spaces):"), new QLabel(QString::number(docCharsWithoutSpaces), this));
+    groupsLayout->addWidget(docGroup);
+
+    if (hasSelection) {
+        auto* selGroup = new QGroupBox(tr("Selection"), this);
+        auto* selLayout = new QFormLayout(selGroup);
+        selLayout->addRow(tr("Lines:"), new QLabel(QString::number(selLines), this));
+        selLayout->addRow(tr("Words:"), new QLabel(QString::number(selWords), this));
+        selLayout->addRow(tr("Characters (with spaces):"), new QLabel(QString::number(selCharsWithSpaces), this));
+        selLayout->addRow(tr("Characters (without spaces):"), new QLabel(QString::number(selCharsWithoutSpaces), this));
+        groupsLayout->addWidget(selGroup);
+    }
+
+    mainLayout->addLayout(groupsLayout);
+
+    auto* buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    auto* closeButton = new QPushButton(tr("Close"), this);
+    closeButton->setDefault(true);
+    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    buttonLayout->addWidget(closeButton);
+
+    mainLayout->addLayout(buttonLayout);
+    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
+}
+
+void MainWindow::onDocumentStatistics() {
+    DocumentStatisticsDialog dlg(m_editor, this);
+    dlg.exec();
 }
 
 void MainWindow::onViewHelp() {

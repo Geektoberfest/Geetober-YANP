@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QDialog>
 #include <QLabel>
 #include <QActionGroup>
 #include <memory>
@@ -12,6 +13,12 @@
 #include "themes/ThemeManager.h"
 
 namespace YANP {
+
+class DocumentStatisticsDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit DocumentStatisticsDialog(const EditorWidget* editor, QWidget* parent = nullptr);
+};
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -56,6 +63,7 @@ private slots:
     // View actions
     void onToggleStatusBar(bool checked);
     void onThemeSelected(QAction* action);
+    void onDocumentStatistics();
 
     // Help actions
     void onViewHelp();
