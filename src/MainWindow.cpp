@@ -8,6 +8,7 @@
 #include <QFileDialog>
 #include <QFontDialog>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QUrl>
@@ -412,11 +413,13 @@ bool MainWindow::confirmLossySave(const QString& content) {
                               "encoding first.")
                                .arg(lossy.size())
                                .arg(describeLossyCharacters(lossy)));
-    box.setStandardButtons(QMessageBox::Save | QMessageBox::Cancel);
-    box.setButtonText(QMessageBox::Save, tr("Save Anyway"));
+    box.setStandardButtons(QMessageBox::Cancel);
+    QPushButton* saveAnywayButton =
+        box.addButton(tr("Save Anyway"), QMessageBox::AcceptRole);
     box.setDefaultButton(QMessageBox::Cancel);
 
-    return box.exec() == QMessageBox::Save;
+    box.exec();
+    return box.clickedButton() == saveAnywayButton;
 }
 
 bool MainWindow::onSave() {
