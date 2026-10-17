@@ -74,16 +74,33 @@ void TestFileManager::testSaveAndOpenUtf8() {
     QString filePath = m_tempDir->filePath(QStringLiteral("test_utf8.txt"));
     QString content = QStringLiteral("Hello World from YANP!\nSecond line with unicode: 🚀 — é à ü ñ");
 
+    // A fresh FileManager uses the platform's native line ending, and saveFile()
+    // normalizes LF to it, so the bytes written (and read back) differ from the
+    // LF-only string on Windows.
+#if defined(Q_OS_WIN)
+    const LineEnding nativeEnding = LineEnding::CRLF;
+#else
+    const LineEnding nativeEnding = LineEnding::LF;
+#endif
+
+    QCOMPARE(fm.lineEnding(), nativeEnding);
+
     FileResult saveRes = fm.saveFile(filePath, content);
     QVERIFY(saveRes.success);
     QCOMPARE(fm.isModified(), false);
     QCOMPARE(fm.filePath(), filePath);
     QCOMPARE(fm.fileName(), QStringLiteral("test_utf8.txt"));
 
+    QString expectedContent = content;
+    if (nativeEnding == LineEnding::CRLF) {
+        expectedContent.replace(QLatin1Char('\n'), QStringLiteral("\r\n"));
+    }
+
     FileManager fm2;
     FileResult openRes = fm2.openFile(filePath);
     QVERIFY(openRes.success);
-    QCOMPARE(openRes.content, content);
+    QCOMPARE(openRes.content, expectedContent);
+    QCOMPARE(fm2.lineEnding(), nativeEnding);
     QCOMPARE(fm2.encoding(), FileEncoding::UTF8);
 }
 
