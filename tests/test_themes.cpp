@@ -12,6 +12,7 @@ private slots:
     void testBuiltInThemesRegistered();
     void testEnchantedLibraryPalette();
     void testDreamscapeIslandsPalette();
+    void testMidnightObservatoryPalette();
     void testThemeValidity();
     void testDuplicateRegistrationRejected();
     void testInvalidThemeRejected();
@@ -35,6 +36,22 @@ void TestThemes::testBuiltInThemesRegistered() {
     QVERIFY(ThemeRegistry::instance().hasTheme(QStringLiteral("solarized-dark")));
     QVERIFY(ThemeRegistry::instance().hasTheme(QStringLiteral("enchanted-library")));
     QVERIFY(ThemeRegistry::instance().hasTheme(QStringLiteral("dreamscape-islands")));
+    QVERIFY(ThemeRegistry::instance().hasTheme(QStringLiteral("midnight-observatory")));
+}
+
+void TestThemes::testMidnightObservatoryPalette() {
+    auto theme = ThemeRegistry::instance().getTheme(QStringLiteral("midnight-observatory"));
+    QVERIFY(theme.has_value());
+    QCOMPARE(theme->name, QStringLiteral("Midnight Observatory"));
+    QCOMPARE(theme->editorBackground, QColor(0x0B, 0x10, 0x20));
+    QCOMPARE(theme->textColor, QColor(0xDC, 0xE7, 0xFF));
+    QCOMPARE(theme->windowBackground, QColor(0x08, 0x0B, 0x16));
+    QCOMPARE(theme->selectionBackground, QColor(0x29, 0x3B, 0x62));
+    QCOMPARE(theme->selectedTextColor, QColor(0xFF, 0xFF, 0xFF));
+    QCOMPARE(theme->caretColor, QColor(0x7D, 0xE2, 0xFF));
+    QCOMPARE(theme->statusBarBackground, QColor(0x15, 0x1B, 0x30));
+    QCOMPARE(theme->statusBarTextColor, QColor(0xA9, 0xB9, 0xE8));
+    QCOMPARE(theme->borderColor, QColor(0x1F, 0x29, 0x42));
 }
 
 void TestThemes::testDreamscapeIslandsPalette() {

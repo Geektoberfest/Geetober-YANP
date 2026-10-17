@@ -7,6 +7,7 @@
 #include "definitions/SolarizedDarkTheme.h"
 #include "definitions/EnchantedLibraryTheme.h"
 #include "definitions/DreamscapeIslandsTheme.h"
+#include "definitions/MidnightObservatoryTheme.h"
 
 #include <algorithm>
 
@@ -31,6 +32,7 @@ void ThemeRegistry::registerDefaults() {
     registerTheme(Themes::createSolarizedDarkTheme());
     registerTheme(Themes::createEnchantedLibraryTheme());
     registerTheme(Themes::createDreamscapeIslandsTheme());
+    registerTheme(Themes::createMidnightObservatoryTheme());
 }
 
 void ThemeRegistry::resetToDefaults() {

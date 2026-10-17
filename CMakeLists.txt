@@ -59,6 +59,8 @@ set(YANP_SOURCES
     src/themes/definitions/EnchantedLibraryTheme.cpp
     src/themes/definitions/DreamscapeIslandsTheme.h
     src/themes/definitions/DreamscapeIslandsTheme.cpp
+    src/themes/definitions/MidnightObservatoryTheme.h
+    src/themes/definitions/MidnightObservatoryTheme.cpp
 )
 
 add_executable(YANP ${YANP_SOURCES})
