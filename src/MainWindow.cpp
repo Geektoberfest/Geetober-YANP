@@ -44,6 +44,42 @@ TextStats computeTextStats(const QString& text, int lines) {
     return stats;
 }
 
+// Renders the characters reported by FileManager::lossyCharacters() for a
+// warning dialog, falling back to a code point for anything that cannot be
+// displayed (control characters, lone surrogates, ...).
+QString describeLossyCharacters(const QStringList& characters) {
+    constexpr qsizetype MaxShown = 8;
+    const qsizetype shown = qMin(characters.size(), MaxShown);
+
+    QStringList parts;
+    parts.reserve(shown);
+    for (qsizetype i = 0; i < shown; ++i) {
+        const QString& character = characters.at(i);
+        const auto codePoints = character.toUcs4();
+
+        bool printable = !codePoints.isEmpty();
+        for (const uint codePoint : codePoints) {
+            if (codePoint < 0x20 || codePoint == 0x7F) {
+                printable = false;
+                break;
+            }
+        }
+
+        if (printable) {
+            parts.append(QStringLiteral("'%1'").arg(character));
+        } else {
+            const uint codePoint = codePoints.isEmpty() ? 0 : codePoints.first();
+            parts.append(QStringLiteral("U+%1").arg(codePoint, 0, 16).toUpper());
+        }
+    }
+
+    QString description = parts.join(QStringLiteral(", "));
+    if (characters.size() > shown) {
+        description.append(QStringLiteral(", ..."));
+    }
+    return description;
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -359,12 +395,41 @@ bool MainWindow::loadFile(const QString& filePath) {
     return true;
 }
 
+bool MainWindow::confirmLossySave(const QString& content) {
+    const QStringList lossy = m_fileManager->lossyCharacters(content);
+    if (lossy.isEmpty()) {
+        return true;
+    }
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(tr("Characters Will Be Lost"));
+    box.setText(tr("The %1 encoding cannot represent some of the characters in "
+                   "this document.")
+                    .arg(m_fileManager->encodingName()));
+    box.setInformativeText(tr("%1 character(s) would be replaced in the saved "
+                              "file:\n%2\n\nSave anyway, or cancel and change the "
+                              "encoding first.")
+                               .arg(lossy.size())
+                               .arg(describeLossyCharacters(lossy)));
+    box.setStandardButtons(QMessageBox::Save | QMessageBox::Cancel);
+    box.setButtonText(QMessageBox::Save, tr("Save Anyway"));
+    box.setDefaultButton(QMessageBox::Cancel);
+
+    return box.exec() == QMessageBox::Save;
+}
+
 bool MainWindow::onSave() {
     if (m_fileManager->filePath().isEmpty()) {
         return onSaveAs();
     }
 
-    FileResult res = m_fileManager->saveFile(m_fileManager->filePath(), m_editor->toPlainText());
+    const QString content = m_editor->toPlainText();
+    if (!confirmLossySave(content)) {
+        return false;
+    }
+
+    FileResult res = m_fileManager->saveFile(m_fileManager->filePath(), content);
     if (!res.success) {
         QMessageBox::critical(this, tr("Error Saving File"), res.errorMessage);
         return false;
@@ -391,7 +456,12 @@ bool MainWindow::onSaveAs() {
         return false;
     }
 
-    FileResult res = m_fileManager->saveFile(fileName, m_editor->toPlainText());
+    const QString content = m_editor->toPlainText();
+    if (!confirmLossySave(content)) {
+        return false;
+    }
+
+    FileResult res = m_fileManager->saveFile(fileName, content);
     if (!res.success) {
         QMessageBox::critical(this, tr("Error Saving File"), res.errorMessage);
         return false;

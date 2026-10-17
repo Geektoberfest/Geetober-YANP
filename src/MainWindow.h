@@ -75,6 +75,7 @@ private:
     void createStatusBar();
     bool maybeSave();
     bool loadFile(const QString& filePath);
+    bool confirmLossySave(const QString& content);
     void loadSettings();
     void saveSettings();
     void populateThemesMenu(QMenu* themeMenu);
