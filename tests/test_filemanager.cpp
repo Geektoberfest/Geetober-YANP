@@ -28,6 +28,9 @@ private slots:
     void testClearRecentFiles();
     void testOpenFileAndSaveFileUpdatesRecentFiles();
     void testRecentFilesSignals();
+    void testLossyCharacterDetection();
+    void testLosslessContentReportsNoLoss();
+    void testSystemLocaleLossyRoundTrip();
 
 private:
     std::unique_ptr<QTemporaryDir> m_tempDir;
@@ -299,6 +302,72 @@ void TestFileManager::testRecentFilesSignals() {
 
     fm.clearRecentFiles();
     QCOMPARE(spy.count(), 3);
+}
+
+void TestFileManager::testLossyCharacterDetection() {
+    // Simulates a narrow locale round trip in which 'é' was replaced by '?'.
+    QCOMPARE(FileManager::findLossyCharacters(QStringLiteral("caf\u00E9"),
+                                              QStringLiteral("caf?")),
+             (QStringList{QStringLiteral("\u00E9")}));
+
+    // Repeated characters are reported only once, in order of appearance.
+    QCOMPARE(FileManager::findLossyCharacters(QStringLiteral("a\u00E9b\u00E9"),
+                                              QStringLiteral("a?b?")),
+             (QStringList{QStringLiteral("\u00E9")}));
+
+    // An identical round trip means nothing was lost.
+    QVERIFY(FileManager::findLossyCharacters(QStringLiteral("caf\u00E9"),
+                                             QStringLiteral("caf\u00E9")).isEmpty());
+
+    // A character outside the BMP is reported as one code point, not two halves.
+    const QString rocket = QStringLiteral("\U0001F680");
+    QCOMPARE(FileManager::findLossyCharacters(QStringLiteral("x") + rocket,
+                                              QStringLiteral("x??")),
+             (QStringList{rocket}));
+}
+
+void TestFileManager::testLosslessContentReportsNoLoss() {
+    FileManager fm;
+
+    // ASCII survives every supported encoding.
+    fm.setEncoding(FileEncoding::SystemLocale);
+    QVERIFY(fm.lossyCharacters(QStringLiteral("Plain ASCII\r\ntext")).isEmpty());
+
+    // The Unicode encodings round-trip every character, so they never report loss.
+    const QString unicode = QStringLiteral("\U0001F680 caf\u00E9 \u00FCber");
+    for (FileEncoding enc : {FileEncoding::UTF8, FileEncoding::UTF8_BOM,
+                             FileEncoding::UTF16_LE, FileEncoding::UTF16_BE}) {
+        fm.setEncoding(enc);
+        QVERIFY2(fm.lossyCharacters(unicode).isEmpty(),
+                 qPrintable(QStringLiteral("Unexpected loss with encoding %1")
+                                .arg(fm.encodingName())));
+    }
+}
+
+void TestFileManager::testSystemLocaleLossyRoundTrip() {
+    FileManager fm;
+    fm.setEncoding(FileEncoding::SystemLocale);
+
+    const QString rocket = QStringLiteral("\U0001F680");
+    const QString content = QStringLiteral("Launch ") + rocket;
+    const QStringList lost = fm.lossyCharacters(content);
+    if (lost.isEmpty()) {
+        QSKIP("The system locale encoding is Unicode, so nothing can be lost here.");
+    }
+    QCOMPARE(lost, (QStringList{rocket}));
+
+    // The detector must describe what saveFile() actually writes.
+    const QString filePath = m_tempDir->filePath(QStringLiteral("test_system_locale.txt"));
+    FileResult saveRes = fm.saveFile(filePath, content);
+    QVERIFY(saveRes.success);
+
+    QFile file(filePath);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray written = file.readAll();
+    file.close();
+
+    QVERIFY(written.contains('?'));
+    QVERIFY(!QString::fromLocal8Bit(written).contains(rocket));
 }
 
 QTEST_MAIN(TestFileManager)

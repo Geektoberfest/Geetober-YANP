@@ -59,6 +59,16 @@ public:
     void removeRecentFile(const QString& path);
     void clearRecentFiles();
 
+    // Characters of @p content that the current encoding cannot represent and
+    // would therefore replace with a placeholder during a save. Empty when
+    // saving @p content round-trips losslessly.
+    QStringList lossyCharacters(const QString& content) const;
+
+    // Round-trip comparison behind lossyCharacters(). Exposed so the check can
+    // be unit tested without depending on the machine's locale.
+    static QStringList findLossyCharacters(const QString& original,
+                                           const QString& roundTripped);
+
 signals:
     void modifiedChanged(bool modified);
     void fileChanged(const QString& filePath);

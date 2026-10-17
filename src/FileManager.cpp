@@ -24,6 +24,59 @@ QString normalizePath(const QString& path) {
 } // namespace
 
 namespace YANP {
+namespace {
+
+// Collapses every newline form to '\n' and re-applies the target line ending,
+// so text coming from the editor (always '\n' separated) is written back with
+// the line endings of the document being saved.
+QString normalizeNewlines(const QString& content, LineEnding lineEnding) {
+    QString normalized = content;
+    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    normalized.replace(QStringLiteral("\r"), QStringLiteral("\n"));
+
+    if (lineEnding == LineEnding::CRLF) {
+        normalized.replace(QStringLiteral("\n"), QStringLiteral("\r\n"));
+    }
+    return normalized;
+}
+
+// Serializes already-normalized text using @p encoding. Shared by saveFile()
+// and lossyCharacters() so the bytes that are checked for loss are exactly the
+// bytes that reach the disk.
+QByteArray encodeNormalized(const QString& normalized, FileEncoding encoding) {
+    QByteArray data;
+    switch (encoding) {
+    case FileEncoding::UTF8_BOM: {
+        data.append("\xEF\xBB\xBF");
+        data.append(normalized.toUtf8());
+        break;
+    }
+    case FileEncoding::UTF16_LE: {
+        data.append("\xFF\xFE");
+        auto encoder = QStringEncoder(QStringEncoder::Utf16LE);
+        data.append(encoder(normalized));
+        break;
+    }
+    case FileEncoding::UTF16_BE: {
+        data.append("\xFE\xFF");
+        auto encoder = QStringEncoder(QStringEncoder::Utf16BE);
+        data.append(encoder(normalized));
+        break;
+    }
+    case FileEncoding::SystemLocale: {
+        data.append(normalized.toLocal8Bit());
+        break;
+    }
+    case FileEncoding::UTF8:
+    default: {
+        data.append(normalized.toUtf8());
+        break;
+    }
+    }
+    return data;
+}
+
+} // namespace
 
 FileManager::FileManager(QObject* parent)
     : QObject(parent)
@@ -137,44 +190,11 @@ FileResult FileManager::saveFile(const QString& filePath, const QString& content
         return result;
     }
 
-    // Normalize newlines based on line ending setting
-    QString normalizedContent = content;
-    normalizedContent.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-    normalizedContent.replace(QStringLiteral("\r"), QStringLiteral("\n"));
-
-    if (m_lineEnding == LineEnding::CRLF) {
-        normalizedContent.replace(QStringLiteral("\n"), QStringLiteral("\r\n"));
-    }
-
-    QByteArray encodedData;
-    switch (m_encoding) {
-    case FileEncoding::UTF8_BOM: {
-        encodedData.append("\xEF\xBB\xBF");
-        encodedData.append(normalizedContent.toUtf8());
-        break;
-    }
-    case FileEncoding::UTF16_LE: {
-        encodedData.append("\xFF\xFE");
-        auto encoder = QStringEncoder(QStringEncoder::Utf16LE);
-        encodedData.append(encoder(normalizedContent));
-        break;
-    }
-    case FileEncoding::UTF16_BE: {
-        encodedData.append("\xFE\xFF");
-        auto encoder = QStringEncoder(QStringEncoder::Utf16BE);
-        encodedData.append(encoder(normalizedContent));
-        break;
-    }
-    case FileEncoding::SystemLocale: {
-        encodedData.append(normalizedContent.toLocal8Bit());
-        break;
-    }
-    case FileEncoding::UTF8:
-    default: {
-        encodedData.append(normalizedContent.toUtf8());
-        break;
-    }
-    }
+    // Normalize newlines to the document's line ending, then serialize with
+    // the document's encoding. Both steps live in shared helpers so the lossy
+    // detection can inspect exactly the bytes that are written below.
+    const QByteArray encodedData =
+        encodeNormalized(normalizeNewlines(content, m_lineEnding), m_encoding);
 
     qint64 bytesWritten = saveFile.write(encodedData);
     if (bytesWritten != encodedData.size()) {
@@ -350,6 +370,55 @@ void FileManager::clearRecentFiles() {
     QSettings settings;
     settings.remove(QStringLiteral("recentFiles/list"));
     emit recentFilesChanged();
+}
+
+QStringList FileManager::lossyCharacters(const QString& content) const {
+    // Every supported encoding except SystemLocale is a Unicode encoding, so
+    // its round trip reproduces the input exactly.
+    if (m_encoding != FileEncoding::SystemLocale) {
+        return {};
+    }
+
+    const QString normalized = normalizeNewlines(content, m_lineEnding);
+    const QByteArray encoded = encodeNormalized(normalized, m_encoding);
+    const QString decoded = QString::fromLocal8Bit(encoded);
+    return findLossyCharacters(normalized, decoded);
+}
+
+QStringList FileManager::findLossyCharacters(const QString& original,
+                                             const QString& roundTripped) {
+    QStringList lost;
+    const qsizetype count = qMin(original.size(), roundTripped.size());
+
+    for (qsizetype i = 0; i < count; ++i) {
+        if (original.at(i) == roundTripped.at(i)) {
+            continue;
+        }
+
+        // Report whole code points so surrogate pairs stay intact.
+        const bool surrogatePair =
+            i + 1 < count &&
+            original.at(i).isHighSurrogate() &&
+            original.at(i + 1).isLowSurrogate();
+        const QString character = surrogatePair ? original.mid(i, 2)
+                                                : QString(original.at(i));
+        if (!lost.contains(character)) {
+            lost.append(character);
+        }
+        if (surrogatePair) {
+            ++i;
+        }
+    }
+
+    // Characters the encoder dropped entirely are lost as well.
+    for (qsizetype i = count; i < original.size(); ++i) {
+        const QString character(original.at(i));
+        if (!lost.contains(character)) {
+            lost.append(character);
+        }
+    }
+
+    return lost;
 }
 
 } // namespace YANP
