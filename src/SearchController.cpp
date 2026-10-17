@@ -386,7 +386,7 @@ bool SearchController::find(const QString& query, bool matchCase, bool backward,
 }
 
 bool SearchController::replace(const QString& query, const QString& replacement, bool matchCase) {
-    if (!m_editor || query.isEmpty()) {
+    if (!m_editor || query.isEmpty() || m_editor->isReadOnly()) {
         return false;
     }
 
@@ -404,7 +404,7 @@ bool SearchController::replace(const QString& query, const QString& replacement,
 }
 
 int SearchController::replaceAll(const QString& query, const QString& replacement, bool matchCase) {
-    if (!m_editor || query.isEmpty()) {
+    if (!m_editor || query.isEmpty() || m_editor->isReadOnly()) {
         return 0;
     }
 

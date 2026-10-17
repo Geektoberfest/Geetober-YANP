@@ -47,6 +47,7 @@ private slots:
     void onGoTo();
     void onSelectAll();
     void onTimeDate();
+    void onToggleReadOnly(bool checked);
     void updateEditActions();
 
     // Format actions
@@ -55,6 +56,7 @@ private slots:
 
     // View actions
     void onToggleStatusBar(bool checked);
+    void onDocumentStatistics();
     void onThemeSelected(QAction* action);
 
     // Help actions
@@ -87,12 +89,16 @@ private:
     QLabel* m_cursorPosLabel = nullptr;
     QLabel* m_encodingLabel = nullptr;
     QLabel* m_lineEndingLabel = nullptr;
+    QLabel* m_readOnlyLabel = nullptr;
 
     // Actions that need dynamic state updates
     QAction* m_undoAction = nullptr;
     QAction* m_cutAction = nullptr;
     QAction* m_copyAction = nullptr;
+    QAction* m_pasteAction = nullptr;
     QAction* m_deleteAction = nullptr;
+    QAction* m_replaceAction = nullptr;
+    QAction* m_timeDateAction = nullptr;
     QAction* m_wordWrapAction = nullptr;
     QAction* m_statusBarAction = nullptr;
 

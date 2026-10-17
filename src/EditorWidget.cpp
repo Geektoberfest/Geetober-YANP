@@ -34,12 +34,19 @@ bool EditorWidget::isWordWrapEnabled() const {
 }
 
 void EditorWidget::insertDateTime() {
+    // textCursor() edits bypass QPlainTextEdit's read-only check, so guard here
+    if (isReadOnly()) {
+        return;
+    }
     // Standard Notepad format: e.g. "11:05 PM 10/13/2026"
     QString dtStr = QDateTime::currentDateTime().toString(QStringLiteral("hh:mm AP MM/dd/yyyy"));
     textCursor().insertText(dtStr);
 }
 
 void EditorWidget::deleteSelection() {
+    if (isReadOnly()) {
+        return;
+    }
     QTextCursor cursor = textCursor();
     if (cursor.hasSelection()) {
         cursor.removeSelectedText();

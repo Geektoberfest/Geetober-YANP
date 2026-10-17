@@ -55,6 +55,10 @@ set(YANP_SOURCES
     src/themes/definitions/AmberCRTTheme.cpp
     src/themes/definitions/SolarizedDarkTheme.h
     src/themes/definitions/SolarizedDarkTheme.cpp
+    src/themes/definitions/EnchantedLibraryTheme.h
+    src/themes/definitions/EnchantedLibraryTheme.cpp
+    src/themes/definitions/DreamscapeIslandsTheme.h
+    src/themes/definitions/DreamscapeIslandsTheme.cpp
 )
 
 add_executable(YANP ${YANP_SOURCES})

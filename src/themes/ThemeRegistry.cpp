@@ -5,6 +5,8 @@
 #include "definitions/RetroGreenTheme.h"
 #include "definitions/AmberCRTTheme.h"
 #include "definitions/SolarizedDarkTheme.h"
+#include "definitions/EnchantedLibraryTheme.h"
+#include "definitions/DreamscapeIslandsTheme.h"
 
 #include <algorithm>
 
@@ -27,6 +29,8 @@ void ThemeRegistry::registerDefaults() {
     registerTheme(Themes::createRetroGreenTheme());
     registerTheme(Themes::createAmberCRTTheme());
     registerTheme(Themes::createSolarizedDarkTheme());
+    registerTheme(Themes::createEnchantedLibraryTheme());
+    registerTheme(Themes::createDreamscapeIslandsTheme());
 }
 
 void ThemeRegistry::resetToDefaults() {

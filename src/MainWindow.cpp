@@ -15,6 +15,37 @@
 
 namespace YANP {
 
+namespace {
+
+struct TextStats {
+    int lines = 0;
+    int words = 0;
+    int charsWithSpaces = 0;
+    int charsWithoutSpaces = 0;
+};
+
+TextStats computeTextStats(const QString& text, int lines) {
+    TextStats stats;
+    stats.lines = text.isEmpty() ? 0 : lines;
+    stats.charsWithSpaces = text.size();
+
+    bool inWord = false;
+    for (const QChar c : text) {
+        if (c.isSpace()) {
+            inWord = false;
+        } else {
+            stats.charsWithoutSpaces++;
+            if (!inWord) {
+                inWord = true;
+                stats.words++;
+            }
+        }
+    }
+    return stats;
+}
+
+} // namespace
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
       m_fileManager(std::make_unique<FileManager>(this)),
@@ -110,8 +141,8 @@ void MainWindow::createMenus() {
     m_copyAction->setShortcut(QKeySequence::Copy);
     m_copyAction->setEnabled(false);
 
-    auto* pasteAction = editMenu->addAction(tr("&Paste"), this, &MainWindow::onPaste);
-    pasteAction->setShortcut(QKeySequence::Paste);
+    m_pasteAction = editMenu->addAction(tr("&Paste"), this, &MainWindow::onPaste);
+    m_pasteAction->setShortcut(QKeySequence::Paste);
 
     m_deleteAction = editMenu->addAction(tr("De&lete"), this, &MainWindow::onDelete);
     m_deleteAction->setShortcut(QKeySequence::Delete);
@@ -125,11 +156,11 @@ void MainWindow::createMenus() {
     auto* findNextAction = editMenu->addAction(tr("Find &Next"), this, &MainWindow::onFindNext);
     findNextAction->setShortcut(QKeySequence::FindNext);
 
-    auto* replaceAction = editMenu->addAction(tr("&Replace..."), this, &MainWindow::onReplace);
+    m_replaceAction = editMenu->addAction(tr("&Replace..."), this, &MainWindow::onReplace);
 #if defined(Q_OS_MACOS)
-    replaceAction->setShortcut(QKeySequence(tr("Ctrl+Meta+F")));
+    m_replaceAction->setShortcut(QKeySequence(tr("Ctrl+Meta+F")));
 #else
-    replaceAction->setShortcut(QKeySequence(tr("Ctrl+H")));
+    m_replaceAction->setShortcut(QKeySequence(tr("Ctrl+H")));
 #endif
 
     auto* goToAction = editMenu->addAction(tr("&Go To..."), this, &MainWindow::onGoTo);
@@ -144,8 +175,13 @@ void MainWindow::createMenus() {
     auto* selectAllAction = editMenu->addAction(tr("Select &All"), this, &MainWindow::onSelectAll);
     selectAllAction->setShortcut(QKeySequence::SelectAll);
 
-    auto* timeDateAction = editMenu->addAction(tr("Time/&Date"), this, &MainWindow::onTimeDate);
-    timeDateAction->setShortcut(QKeySequence(Qt::Key_F5));
+    m_timeDateAction = editMenu->addAction(tr("Time/&Date"), this, &MainWindow::onTimeDate);
+    m_timeDateAction->setShortcut(QKeySequence(Qt::Key_F5));
+
+    editMenu->addSeparator();
+
+    auto* readOnlyAction = editMenu->addAction(tr("&Read-Only"), this, &MainWindow::onToggleReadOnly);
+    readOnlyAction->setCheckable(true);
 
     // === FORMAT MENU ===
     QMenu* formatMenu = menuBar()->addMenu(tr("F&ormat"));
@@ -162,6 +198,8 @@ void MainWindow::createMenus() {
     m_statusBarAction = viewMenu->addAction(tr("&Status Bar"), this, &MainWindow::onToggleStatusBar);
     m_statusBarAction->setCheckable(true);
     m_statusBarAction->setChecked(true);
+
+    viewMenu->addAction(tr("Document &Statistics..."), this, &MainWindow::onDocumentStatistics);
 
     QMenu* themeMenu = viewMenu->addMenu(tr("&Theme"));
     populateThemesMenu(themeMenu);
@@ -208,6 +246,10 @@ void MainWindow::createStatusBar() {
     m_lineEndingLabel = new QLabel(this);
     m_lineEndingLabel->setMinimumWidth(120);
     statusBar()->addPermanentWidget(m_lineEndingLabel);
+
+    m_readOnlyLabel = new QLabel(tr("[Read-Only]"), this);
+    m_readOnlyLabel->setVisible(false);
+    statusBar()->addPermanentWidget(m_readOnlyLabel);
 }
 
 void MainWindow::onNew() {
@@ -412,19 +454,36 @@ void MainWindow::onTimeDate() {
     m_editor->insertDateTime();
 }
 
+void MainWindow::onToggleReadOnly(bool checked) {
+    m_editor->setReadOnly(checked);
+    m_readOnlyLabel->setVisible(checked);
+    updateEditActions();
+}
+
 void MainWindow::updateEditActions() {
+    // Read-only blocks every action that changes the document; copy and selection stay usable
+    const bool readOnly = m_editor->isReadOnly();
     if (m_undoAction) {
-        m_undoAction->setEnabled(m_editor->document()->isUndoAvailable());
+        m_undoAction->setEnabled(!readOnly && m_editor->document()->isUndoAvailable());
     }
     bool hasSelection = m_editor->textCursor().hasSelection();
     if (m_cutAction) {
-        m_cutAction->setEnabled(hasSelection);
+        m_cutAction->setEnabled(!readOnly && hasSelection);
     }
     if (m_copyAction) {
         m_copyAction->setEnabled(hasSelection);
     }
+    if (m_pasteAction) {
+        m_pasteAction->setEnabled(!readOnly);
+    }
     if (m_deleteAction) {
-        m_deleteAction->setEnabled(hasSelection);
+        m_deleteAction->setEnabled(!readOnly && hasSelection);
+    }
+    if (m_replaceAction) {
+        m_replaceAction->setEnabled(!readOnly);
+    }
+    if (m_timeDateAction) {
+        m_timeDateAction->setEnabled(!readOnly);
     }
 }
 
@@ -462,6 +521,33 @@ void MainWindow::onViewHelp() {
 void MainWindow::onAbout() {
     AboutDialog dlg(this);
     dlg.exec();
+}
+
+void MainWindow::onDocumentStatistics() {
+    const QString fullText = m_editor->toPlainText();
+    const TextStats doc = computeTextStats(fullText, m_editor->document()->blockCount());
+
+    QString message = tr("Document\nLines: %1\nWords: %2\nCharacters (with spaces): %3\nCharacters (without spaces): %4")
+        .arg(doc.lines)
+        .arg(doc.words)
+        .arg(doc.charsWithSpaces)
+        .arg(doc.charsWithoutSpaces);
+
+    const QTextCursor cursor = m_editor->textCursor();
+    if (cursor.hasSelection()) {
+        const QString selectedText = cursor.selectedText();
+        // Selected text uses U+2029 between paragraphs, so count those to get selection lines
+        const int selectionLines = selectedText.count(QChar::ParagraphSeparator) + 1;
+        const TextStats sel = computeTextStats(selectedText, selectionLines);
+
+        message += tr("\n\nSelection\nLines: %1\nWords: %2\nCharacters (with spaces): %3\nCharacters (without spaces): %4")
+            .arg(sel.lines)
+            .arg(sel.words)
+            .arg(sel.charsWithSpaces)
+            .arg(sel.charsWithoutSpaces);
+    }
+
+    QMessageBox::information(this, tr("Document Statistics"), message);
 }
 
 void MainWindow::onDocumentTextChanged() {

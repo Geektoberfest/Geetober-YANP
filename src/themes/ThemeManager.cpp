@@ -137,7 +137,7 @@ void ThemeManager::applyTheme(const Theme& theme, QMainWindow* window, QPlainTex
             "  color: %4;"
             "}"
         ).arg(theme.windowBackground.name(),
-              theme.textColor.name(),
+              theme.statusBarTextColor.name(),
               theme.selectionBackground.name(),
               theme.selectedTextColor.name(),
               theme.borderColor.name());

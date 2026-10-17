@@ -15,6 +15,7 @@ private slots:
     void testReplaceAll();
     void testGoToLine();
     void testEmptyQuery();
+    void testReadOnlyBlocksEdits();
 };
 
 void TestSearch::testFindBasic() {
@@ -118,6 +119,30 @@ void TestSearch::testEmptyQuery() {
     SearchController sc(&editor);
     QVERIFY(!sc.find(QString(), false, false, false));
     QCOMPARE(sc.replaceAll(QString(), QStringLiteral("xyz"), false), 0);
+}
+
+void TestSearch::testReadOnlyBlocksEdits() {
+    EditorWidget editor;
+    editor.setPlainText(QStringLiteral("Keep me"));
+    editor.setReadOnly(true);
+
+    SearchController sc(&editor);
+
+    // Select a word, then try every edit path that bypasses QPlainTextEdit's own checks
+    editor.moveCursor(QTextCursor::Start);
+    editor.moveCursor(QTextCursor::EndOfWord, QTextCursor::KeepAnchor);
+    editor.deleteSelection();
+    QCOMPARE(editor.toPlainText(), QStringLiteral("Keep me"));
+
+    editor.insertDateTime();
+    QCOMPARE(editor.toPlainText(), QStringLiteral("Keep me"));
+
+    QCOMPARE(sc.replaceAll(QStringLiteral("Keep"), QStringLiteral("Lose"), false), 0);
+    QCOMPARE(editor.toPlainText(), QStringLiteral("Keep me"));
+
+    // Copy and selection still work in read-only mode
+    QVERIFY(editor.textCursor().hasSelection());
+    QCOMPARE(editor.textCursor().selectedText(), QStringLiteral("Keep"));
 }
 
 QTEST_MAIN(TestSearch)
