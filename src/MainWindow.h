@@ -68,6 +68,8 @@ private slots:
     void onCursorCoordinatesChanged(int line, int column);
     void updateStatusBar();
     void updateWindowTitle();
+    void onFileChangedExternally(const QString& filePath);
+    void reloadCurrentFile();
 
 private:
     void createActions();
@@ -81,6 +83,7 @@ private:
 
     EditorWidget* m_editor = nullptr;
     std::unique_ptr<FileManager> m_fileManager;
+    bool m_isReloadDialogOpen = false;
     std::unique_ptr<SearchController> m_searchController;
     std::unique_ptr<PrintManager> m_printManager;
     std::unique_ptr<ThemeManager> m_themeManager;

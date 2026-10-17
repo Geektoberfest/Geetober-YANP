@@ -8,6 +8,8 @@
 #include <QFileDialog>
 #include <QFontDialog>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QScrollBar>
 #include <QCloseEvent>
 #include <QDesktopServices>
 #include <QUrl>
@@ -79,6 +81,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_fileManager.get(), &FileManager::modifiedChanged, this, &MainWindow::updateWindowTitle);
     connect(m_fileManager.get(), &FileManager::fileChanged, this, &MainWindow::updateWindowTitle);
     connect(m_fileManager.get(), &FileManager::recentFilesChanged, this, &MainWindow::updateRecentFilesMenu);
+    connect(m_fileManager.get(), &FileManager::fileChangedExternally, this, &MainWindow::onFileChangedExternally);
 
     updateRecentFilesMenu();
     loadSettings();
@@ -357,6 +360,66 @@ bool MainWindow::loadFile(const QString& filePath) {
     updateWindowTitle();
     updateStatusBar();
     return true;
+}
+
+void MainWindow::onFileChangedExternally(const QString& filePath) {
+    if (filePath.isEmpty() || filePath != m_fileManager->filePath()) {
+        return;
+    }
+    if (m_isReloadDialogOpen) {
+        return;
+    }
+
+    m_isReloadDialogOpen = true;
+
+    if (!m_fileManager->isModified()) {
+        const QMessageBox::StandardButton ret = QMessageBox::question(
+            this,
+            tr("File Changed"),
+            tr("File has been modified outside the editor. Reload?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::Yes
+        );
+        if (ret == QMessageBox::Yes) {
+            reloadCurrentFile();
+        }
+    } else {
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle(tr("File Changed"));
+        msgBox.setText(tr("File has been modified externally. Reloading will overwrite local changes. Reload or Keep Local?"));
+        msgBox.setIcon(QMessageBox::Warning);
+        QPushButton* reloadButton = msgBox.addButton(tr("Reload"), QMessageBox::AcceptRole);
+        QPushButton* keepLocalButton = msgBox.addButton(tr("Keep Local"), QMessageBox::RejectRole);
+        msgBox.setDefaultButton(keepLocalButton);
+        msgBox.exec();
+
+        if (msgBox.clickedButton() == reloadButton) {
+            reloadCurrentFile();
+        }
+    }
+
+    m_isReloadDialogOpen = false;
+}
+
+void MainWindow::reloadCurrentFile() {
+    int cursorPos = m_editor->textCursor().position();
+    int scrollValue = m_editor->verticalScrollBar()->value();
+
+    FileResult res = m_fileManager->openFile(m_fileManager->filePath());
+    if (!res.success) {
+        QMessageBox::critical(this, tr("Error Reloading File"), res.errorMessage);
+        return;
+    }
+
+    m_editor->setPlainText(res.content);
+    m_fileManager->setModified(false);
+    updateWindowTitle();
+    updateStatusBar();
+
+    QTextCursor cursor = m_editor->textCursor();
+    cursor.setPosition(std::min(cursorPos, static_cast<int>(m_editor->toPlainText().length())));
+    m_editor->setTextCursor(cursor);
+    m_editor->verticalScrollBar()->setValue(scrollValue);
 }
 
 bool MainWindow::onSave() {

@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <stdio.h>
 #include "FileManager.h"
 
 using namespace YANP;
@@ -28,6 +29,10 @@ private slots:
     void testClearRecentFiles();
     void testOpenFileAndSaveFileUpdatesRecentFiles();
     void testRecentFilesSignals();
+    void testExternalChangeDetectionClean();
+    void testSelfSaveDoesNotTriggerExternalChange();
+    void testAtomicRenameDetected();
+    void testRapidChangesDebouncedToOneEvent();
 
 private:
     std::unique_ptr<QTemporaryDir> m_tempDir;
@@ -299,6 +304,99 @@ void TestFileManager::testRecentFilesSignals() {
 
     fm.clearRecentFiles();
     QCOMPARE(spy.count(), 3);
+}
+
+void TestFileManager::testExternalChangeDetectionClean() {
+    FileManager fm;
+    QString filePath = m_tempDir->filePath(QStringLiteral("watch_test.txt"));
+    FileResult res = fm.saveFile(filePath, QStringLiteral("Original content"));
+    QVERIFY(res.success);
+
+    QSignalSpy spy(&fm, &FileManager::fileChangedExternally);
+
+    // Modify file externally
+    {
+        QFile file(filePath);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write("External new content");
+        file.close();
+    }
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 2000);
+    QCOMPARE(spy.first().at(0).toString(), filePath);
+}
+
+void TestFileManager::testSelfSaveDoesNotTriggerExternalChange() {
+    FileManager fm;
+    QString filePath = m_tempDir->filePath(QStringLiteral("self_save_test.txt"));
+    FileResult res = fm.saveFile(filePath, QStringLiteral("Initial content"));
+    QVERIFY(res.success);
+
+    QSignalSpy spy(&fm, &FileManager::fileChangedExternally);
+
+    // Save again from within YANP
+    FileResult res2 = fm.saveFile(filePath, QStringLiteral("Updated content by YANP"));
+    QVERIFY(res2.success);
+
+    QTest::qWait(400);
+    QCOMPARE(spy.count(), 0);
+}
+
+void TestFileManager::testAtomicRenameDetected() {
+    FileManager fm;
+    QString filePath = m_tempDir->filePath(QStringLiteral("atomic_test.txt"));
+    FileResult res = fm.saveFile(filePath, QStringLiteral("Before atomic rename"));
+    QVERIFY(res.success);
+
+    QSignalSpy spy(&fm, &FileManager::fileChangedExternally);
+
+    // Simulate atomic write 1 (temp file rename over original)
+    QString tempPath1 = m_tempDir->filePath(QStringLiteral("atomic_temp1.tmp"));
+    {
+        QFile tempFile(tempPath1);
+        QVERIFY(tempFile.open(QIODevice::WriteOnly));
+        tempFile.write("First atomic content");
+        tempFile.close();
+        QCOMPARE(::rename(tempPath1.toLocal8Bit().constData(), filePath.toLocal8Bit().constData()), 0);
+    }
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 2000);
+
+    // Simulate atomic write 2 to verify watcher re-hooking worked
+    QString tempPath2 = m_tempDir->filePath(QStringLiteral("atomic_temp2.tmp"));
+    {
+        QFile tempFile(tempPath2);
+        QVERIFY(tempFile.open(QIODevice::WriteOnly));
+        tempFile.write("Second atomic content");
+        tempFile.close();
+        QCOMPARE(::rename(tempPath2.toLocal8Bit().constData(), filePath.toLocal8Bit().constData()), 0);
+    }
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 2000);
+}
+
+void TestFileManager::testRapidChangesDebouncedToOneEvent() {
+    FileManager fm;
+    QString filePath = m_tempDir->filePath(QStringLiteral("debounce_test.txt"));
+    FileResult res = fm.saveFile(filePath, QStringLiteral("Initial debounce content"));
+    QVERIFY(res.success);
+
+    QSignalSpy spy(&fm, &FileManager::fileChangedExternally);
+
+    // Write rapidly 5 times
+    for (int i = 0; i < 5; ++i) {
+        QFile file(filePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            file.write(QString("Rapid content %1").arg(i).toUtf8());
+            file.close();
+        }
+        QTest::qWait(10);
+    }
+
+    // Wait for the debounce timer to settle and fire exactly once
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 2000);
+    QTest::qWait(300);
+    QCOMPARE(spy.count(), 1);
 }
 
 QTEST_MAIN(TestFileManager)

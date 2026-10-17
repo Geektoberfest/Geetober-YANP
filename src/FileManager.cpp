@@ -6,6 +6,9 @@
 #include <QStringEncoder>
 #include <QSaveFile>
 #include <QSettings>
+#include <QFileSystemWatcher>
+#include <QTimer>
+#include <QCryptographicHash>
 
 namespace {
 
@@ -26,18 +29,30 @@ QString normalizePath(const QString& path) {
 namespace YANP {
 
 FileManager::FileManager(QObject* parent)
-    : QObject(parent)
+    : QObject(parent),
+      m_watcher(new QFileSystemWatcher(this)),
+      m_debounceTimer(new QTimer(this))
 {
 #if defined(Q_OS_WIN)
     m_lineEnding = LineEnding::CRLF;
 #else
     m_lineEnding = LineEnding::LF;
 #endif
+
+    m_debounceTimer->setSingleShot(true);
+    m_debounceTimer->setInterval(150);
+    connect(m_debounceTimer, &QTimer::timeout, this, &FileManager::checkExternalChange);
+
+    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &FileManager::onWatchedFileChanged);
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &FileManager::onWatchedDirectoryChanged);
 }
 
 void FileManager::reset() {
+    stopWatching();
     m_filePath.clear();
     m_isModified = false;
+    m_lastDiskHash.clear();
+    m_lastDiskTime = QDateTime();
     m_encoding = FileEncoding::UTF8;
 #if defined(Q_OS_WIN)
     m_lineEnding = LineEnding::CRLF;
@@ -113,11 +128,14 @@ FileResult FileManager::openFile(const QString& filePath) {
     m_encoding = detectedEncoding;
     m_filePath = QFileInfo(filePath).absoluteFilePath();
     m_isModified = false;
+    m_lastDiskHash = QCryptographicHash::hash(rawData, QCryptographicHash::Sha256);
+    m_lastDiskTime = QFileInfo(filePath).lastModified();
 
     result.success = true;
     result.content = decodedContent;
 
     recordRecentFile(m_filePath);
+    startWatching(m_filePath);
 
     emit modifiedChanged(false);
     emit fileChanged(m_filePath);
@@ -193,11 +211,14 @@ FileResult FileManager::saveFile(const QString& filePath, const QString& content
 
     m_filePath = QFileInfo(filePath).absoluteFilePath();
     m_isModified = false;
+    m_lastDiskHash = QCryptographicHash::hash(encodedData, QCryptographicHash::Sha256);
+    m_lastDiskTime = QFileInfo(m_filePath).lastModified();
 
     result.success = true;
     result.content = content;
 
     recordRecentFile(m_filePath);
+    startWatching(m_filePath);
 
     emit modifiedChanged(false);
     emit fileChanged(m_filePath);
@@ -211,6 +232,11 @@ QString FileManager::filePath() const {
 
 void FileManager::setFilePath(const QString& path) {
     m_filePath = path;
+    if (!m_filePath.isEmpty()) {
+        startWatching(m_filePath);
+    } else {
+        stopWatching();
+    }
     emit fileChanged(m_filePath);
 }
 
@@ -350,6 +376,98 @@ void FileManager::clearRecentFiles() {
     QSettings settings;
     settings.remove(QStringLiteral("recentFiles/list"));
     emit recentFilesChanged();
+}
+
+void FileManager::startWatching(const QString& path) {
+    stopWatching();
+    if (path.isEmpty() || !QFile::exists(path)) {
+        return;
+    }
+    m_watcher->addPath(path);
+    QString dir = QFileInfo(path).absolutePath();
+    if (QDir(dir).exists()) {
+        m_watchedDirectory = dir;
+        m_watcher->addPath(dir);
+    }
+}
+
+void FileManager::stopWatching() {
+    if (m_debounceTimer) {
+        m_debounceTimer->stop();
+    }
+    if (m_watcher) {
+        const QStringList files = m_watcher->files();
+        if (!files.isEmpty()) {
+            m_watcher->removePaths(files);
+        }
+        if (!m_watchedDirectory.isEmpty()) {
+            m_watcher->removePath(m_watchedDirectory);
+            m_watchedDirectory.clear();
+        }
+    }
+}
+
+void FileManager::rehookWatcher() {
+    if (m_filePath.isEmpty() || !m_watcher) {
+        return;
+    }
+    if (m_watcher->files().contains(m_filePath)) {
+        m_watcher->removePath(m_filePath);
+    }
+    if (QFile::exists(m_filePath)) {
+        m_watcher->addPath(m_filePath);
+    } else {
+        // Retry shortly in case file was momentarily unlinked during atomic rename
+        QTimer::singleShot(50, this, [this]() {
+            if (!m_filePath.isEmpty() && QFile::exists(m_filePath) && m_watcher) {
+                if (!m_watcher->files().contains(m_filePath)) {
+                    m_watcher->addPath(m_filePath);
+                }
+            }
+        });
+    }
+}
+
+void FileManager::onWatchedFileChanged(const QString& path) {
+    if (path != m_filePath) {
+        return;
+    }
+    rehookWatcher();
+    m_debounceTimer->start();
+}
+
+void FileManager::onWatchedDirectoryChanged(const QString& dir) {
+    if (dir != m_watchedDirectory || m_filePath.isEmpty()) {
+        return;
+    }
+    // Re-hook if the file was replaced via atomic rename
+    if (m_watcher && !m_watcher->files().contains(m_filePath) && QFile::exists(m_filePath)) {
+        m_watcher->addPath(m_filePath);
+    }
+    m_debounceTimer->start();
+}
+
+void FileManager::checkExternalChange() {
+    if (m_filePath.isEmpty() || !QFile::exists(m_filePath)) {
+        return;
+    }
+
+    QFile file(m_filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return;
+    }
+    QByteArray currentData = file.readAll();
+    file.close();
+
+    QByteArray currentHash = QCryptographicHash::hash(currentData, QCryptographicHash::Sha256);
+    if (currentHash == m_lastDiskHash) {
+        m_lastDiskTime = QFileInfo(m_filePath).lastModified();
+        return;
+    }
+
+    m_lastDiskHash = currentHash;
+    m_lastDiskTime = QFileInfo(m_filePath).lastModified();
+    emit fileChangedExternally(m_filePath);
 }
 
 } // namespace YANP

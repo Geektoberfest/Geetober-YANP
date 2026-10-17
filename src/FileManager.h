@@ -3,7 +3,11 @@
 #include <QString>
 #include <QStringList>
 #include <QByteArray>
+#include <QDateTime>
 #include <QObject>
+
+class QFileSystemWatcher;
+class QTimer;
 
 namespace YANP {
 
@@ -63,12 +67,28 @@ signals:
     void modifiedChanged(bool modified);
     void fileChanged(const QString& filePath);
     void recentFilesChanged();
+    void fileChangedExternally(const QString& filePath);
+
+private slots:
+    void onWatchedFileChanged(const QString& path);
+    void onWatchedDirectoryChanged(const QString& path);
+    void checkExternalChange();
 
 private:
+    void startWatching(const QString& path);
+    void stopWatching();
+    void rehookWatcher();
+
     QString m_filePath;
     bool m_isModified = false;
     FileEncoding m_encoding = FileEncoding::UTF8;
     LineEnding m_lineEnding = LineEnding::LF;
+
+    QFileSystemWatcher* m_watcher = nullptr;
+    QTimer* m_debounceTimer = nullptr;
+    QString m_watchedDirectory;
+    QByteArray m_lastDiskHash;
+    QDateTime m_lastDiskTime;
 };
 
 } // namespace YANP
