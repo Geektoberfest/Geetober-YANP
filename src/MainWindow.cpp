@@ -60,7 +60,7 @@ MainWindow::MainWindow(QWidget* parent)
     // Default monospaced font
     QFont defaultFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     defaultFont.setPointSize(11);
-    m_editor->setFont(defaultFont);
+    m_editor->setBaseFont(defaultFont);
 
     // Initialize Search and Print managers
     m_searchController = std::make_unique<SearchController>(m_editor, this);
@@ -76,6 +76,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_editor, &EditorWidget::fileDropped, this, &MainWindow::openFileFromPath);
     connect(m_editor, &QPlainTextEdit::copyAvailable, this, [this](bool) { updateEditActions(); });
     connect(m_editor, &QPlainTextEdit::undoAvailable, this, [this](bool) { updateEditActions(); });
+    connect(m_editor, &EditorWidget::zoomChanged, this, [this](int percent) {
+        if (m_zoomLabel) {
+            m_zoomLabel->setText(tr("%1%").arg(percent));
+        }
+    });
 
     // Connect file manager signals
     connect(m_fileManager.get(), &FileManager::modifiedChanged, this, &MainWindow::updateWindowTitle);
@@ -198,6 +203,18 @@ void MainWindow::createMenus() {
     // === VIEW MENU ===
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
 
+    QMenu* zoomMenu = viewMenu->addMenu(tr("&Zoom"));
+    auto* zoomInAction = zoomMenu->addAction(tr("Zoom &In"), this, &MainWindow::onZoomIn);
+    zoomInAction->setShortcuts({QKeySequence(Qt::CTRL | Qt::Key_Plus), QKeySequence(Qt::CTRL | Qt::Key_Equal)});
+
+    auto* zoomOutAction = zoomMenu->addAction(tr("Zoom &Out"), this, &MainWindow::onZoomOut);
+    zoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
+
+    auto* resetZoomAction = zoomMenu->addAction(tr("Reset &Zoom"), this, &MainWindow::onResetZoom);
+    resetZoomAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+
+    viewMenu->addSeparator();
+
     m_statusBarAction = viewMenu->addAction(tr("&Status Bar"), this, &MainWindow::onToggleStatusBar);
     m_statusBarAction->setCheckable(true);
     m_statusBarAction->setChecked(true);
@@ -241,6 +258,11 @@ void MainWindow::createStatusBar() {
     m_cursorPosLabel = new QLabel(this);
     m_cursorPosLabel->setMinimumWidth(140);
     statusBar()->addWidget(m_cursorPosLabel);
+
+    m_zoomLabel = new QLabel(this);
+    m_zoomLabel->setMinimumWidth(60);
+    m_zoomLabel->setAlignment(Qt::AlignCenter);
+    statusBar()->addPermanentWidget(m_zoomLabel);
 
     m_encodingLabel = new QLabel(this);
     m_encodingLabel->setMinimumWidth(100);
@@ -557,11 +579,23 @@ void MainWindow::onToggleWordWrap(bool checked) {
 
 void MainWindow::onSelectFont() {
     bool ok = false;
-    QFont font = QFontDialog::getFont(&ok, m_editor->font(), this, tr("Select Font"));
+    QFont font = QFontDialog::getFont(&ok, m_editor->baseFont(), this, tr("Select Font"));
     if (ok) {
-        m_editor->setFont(font);
+        m_editor->setBaseFont(font);
         saveSettings();
     }
+}
+
+void MainWindow::onZoomIn() {
+    m_editor->zoomIn();
+}
+
+void MainWindow::onZoomOut() {
+    m_editor->zoomOut();
+}
+
+void MainWindow::onResetZoom() {
+    m_editor->resetZoom();
 }
 
 void MainWindow::onToggleStatusBar(bool checked) {
@@ -625,6 +659,9 @@ void MainWindow::onCursorCoordinatesChanged(int line, int column) {
 
 void MainWindow::updateStatusBar() {
     m_cursorPosLabel->setText(tr("Ln %1, Col %2").arg(m_editor->currentLine()).arg(m_editor->currentColumn()));
+    if (m_zoomLabel) {
+        m_zoomLabel->setText(tr("%1%").arg(m_editor->zoomPercent()));
+    }
     m_encodingLabel->setText(m_fileManager->encodingName());
     m_lineEndingLabel->setText(m_fileManager->lineEndingName());
 }
@@ -687,7 +724,7 @@ void MainWindow::loadSettings() {
     int fontSize = settings.value(QStringLiteral("font/size"), 0).toInt();
     if (!fontFamily.isEmpty() && fontSize > 0) {
         QFont f(fontFamily, fontSize);
-        m_editor->setFont(f);
+        m_editor->setBaseFont(f);
     }
 }
 
@@ -697,8 +734,8 @@ void MainWindow::saveSettings() {
     settings.setValue(QStringLiteral("window/pos"), pos());
     settings.setValue(QStringLiteral("editor/wordWrap"), m_editor->isWordWrapEnabled());
     settings.setValue(QStringLiteral("view/statusBar"), statusBar()->isVisible());
-    settings.setValue(QStringLiteral("font/family"), m_editor->font().family());
-    settings.setValue(QStringLiteral("font/size"), m_editor->font().pointSize());
+    settings.setValue(QStringLiteral("font/family"), m_editor->baseFont().family());
+    settings.setValue(QStringLiteral("font/size"), m_editor->baseFont().pointSize());
 }
 
 } // namespace YANP

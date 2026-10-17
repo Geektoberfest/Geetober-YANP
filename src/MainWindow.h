@@ -55,6 +55,9 @@ private slots:
     void onSelectFont();
 
     // View actions
+    void onZoomIn();
+    void onZoomOut();
+    void onResetZoom();
     void onToggleStatusBar(bool checked);
     void onDocumentStatistics();
     void onThemeSelected(QAction* action);
@@ -90,6 +93,7 @@ private:
 
     // Status bar widgets
     QLabel* m_cursorPosLabel = nullptr;
+    QLabel* m_zoomLabel = nullptr;
     QLabel* m_encodingLabel = nullptr;
     QLabel* m_lineEndingLabel = nullptr;
     QLabel* m_readOnlyLabel = nullptr;

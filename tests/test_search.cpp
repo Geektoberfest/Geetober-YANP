@@ -1,4 +1,6 @@
 #include <QTest>
+#include <QSignalSpy>
+#include <QWheelEvent>
 #include "EditorWidget.h"
 #include "SearchController.h"
 
@@ -16,6 +18,9 @@ private slots:
     void testGoToLine();
     void testEmptyQuery();
     void testReadOnlyBlocksEdits();
+    void testZoomInAndOut();
+    void testZoomSettingsIsolation();
+    void testWheelZoom();
 };
 
 void TestSearch::testFindBasic() {
@@ -143,6 +148,108 @@ void TestSearch::testReadOnlyBlocksEdits() {
     // Copy and selection still work in read-only mode
     QVERIFY(editor.textCursor().hasSelection());
     QCOMPARE(editor.textCursor().selectedText(), QStringLiteral("Keep"));
+}
+
+void TestSearch::testZoomInAndOut() {
+    EditorWidget editor;
+    QCOMPARE(editor.zoomPercent(), 100);
+
+    QSignalSpy spy(&editor, &EditorWidget::zoomChanged);
+
+    editor.zoomIn();
+    QCOMPARE(editor.zoomPercent(), 110);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toInt(), 110);
+
+    editor.zoomIn();
+    QCOMPARE(editor.zoomPercent(), 120);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toInt(), 120);
+
+    editor.zoomOut();
+    QCOMPARE(editor.zoomPercent(), 110);
+
+    editor.resetZoom();
+    QCOMPARE(editor.zoomPercent(), 100);
+
+    // Test upper clamp
+    editor.setZoomPercent(600);
+    QCOMPARE(editor.zoomPercent(), EditorWidget::MaxZoom);
+
+    // Test lower clamp
+    editor.setZoomPercent(5);
+    QCOMPARE(editor.zoomPercent(), EditorWidget::MinZoom);
+}
+
+void TestSearch::testZoomSettingsIsolation() {
+    EditorWidget editor;
+    QFont baseFont(QStringLiteral("Monospace"), 12);
+    editor.setBaseFont(baseFont);
+
+    QCOMPARE(editor.baseFont().pointSize(), 12);
+
+    editor.setZoomPercent(200);
+    QCOMPARE(editor.zoomPercent(), 200);
+
+    // The displayed font scales to 24pt
+    QCOMPARE(qRound(editor.font().pointSizeF()), 24);
+
+    // The base font preserved for settings remains 12pt
+    QCOMPARE(editor.baseFont().pointSize(), 12);
+
+    editor.resetZoom();
+    QCOMPARE(qRound(editor.font().pointSizeF()), 12);
+}
+
+void TestSearch::testWheelZoom() {
+    EditorWidget editor;
+    QCOMPARE(editor.zoomPercent(), 100);
+
+    // Wheel event with Ctrl modifier zooming in via viewport
+    QWheelEvent wheelIn(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, 120),
+        Qt::NoButton,
+        Qt::ControlModifier,
+        Qt::NoScrollPhase,
+        false
+    );
+    QCoreApplication::sendEvent(editor.viewport(), &wheelIn);
+    QCOMPARE(editor.zoomPercent(), 110);
+
+    // Wheel event with Ctrl modifier zooming in via editor directly
+    QCoreApplication::sendEvent(&editor, &wheelIn);
+    QCOMPARE(editor.zoomPercent(), 120);
+
+    // Wheel event with Ctrl modifier zooming out
+    QWheelEvent wheelOut(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt::NoButton,
+        Qt::ControlModifier,
+        Qt::NoScrollPhase,
+        false
+    );
+    QCoreApplication::sendEvent(editor.viewport(), &wheelOut);
+    QCOMPARE(editor.zoomPercent(), 110);
+
+    // Wheel event without Ctrl modifier should NOT change zoom
+    QWheelEvent wheelNoCtrl(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, 120),
+        Qt::NoButton,
+        Qt::NoModifier,
+        Qt::NoScrollPhase,
+        false
+    );
+    QCoreApplication::sendEvent(editor.viewport(), &wheelNoCtrl);
+    QCOMPARE(editor.zoomPercent(), 110);
 }
 
 QTEST_MAIN(TestSearch)
